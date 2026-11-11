@@ -1,6 +1,6 @@
-"""Importing this module caps the CUDA memory of PyTorch at the share of a GPU that the GPU shards of the Slurm job stand for.
+"""Importing shardguard caps the CUDA memory of PyTorch at the share of a GPU that the GPU shards of the Slurm job stand for.
 
-The cap is ``per_process_memory_fraction`` in the allocator configuration of PyTorch, set to the shards of the job over the shards one GPU of the node holds. ``expandable_segments`` keeps what PyTorch reserves close to what it allocates. PyTorch reads the configuration when it initialises CUDA, so this module must be imported before that, which it checks. Outside a job holding shards, it does nothing.
+The cap is ``per_process_memory_fraction`` in the allocator configuration of PyTorch, set to the shards of the job over the shards one GPU of the node holds. ``expandable_segments`` keeps what PyTorch reserves close to what it allocates. PyTorch reads the configuration when it initialises CUDA, so shardguard must be imported before that, which it checks. Outside a job holding shards, it does nothing.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import sys
 from importlib import metadata
 from typing import MutableMapping
 
-SHARDS_PER_GPU = "SAFE_SLURM_SHARDS_PER_GPU"
+SHARDS_PER_GPU = "SHARDGUARD_SHARDS_PER_GPU"
 # PyTorch reads the first of these that is set, and releases before 2.9 only the second.
 ALLOC_CONF = ("PYTORCH_ALLOC_CONF", "PYTORCH_CUDA_ALLOC_CONF")
 FRACTION = re.compile(r"per_process_memory_fraction:([0-9.]+)")
@@ -53,7 +53,7 @@ def fraction(environ: MutableMapping[str, str] = os.environ) -> float | None:
         return None
     if "," in environ.get("CUDA_VISIBLE_DEVICES", ""):
         raise RuntimeError(
-            "safe_shards: the shards of this job are on several GPUs, which one fraction per GPU cannot cap"
+            "shardguard: the shards of this job are on several GPUs, which one fraction per GPU cannot cap"
         )
     per_gpu = environ.get(SHARDS_PER_GPU)
     if not per_gpu:
@@ -63,7 +63,7 @@ def fraction(environ: MutableMapping[str, str] = os.environ) -> float | None:
             per_gpu = None
         if not per_gpu:
             raise RuntimeError(
-                f"safe_shards: cannot tell how many shards one GPU of this node holds, so set {SHARDS_PER_GPU}"
+                f"shardguard: cannot tell how many shards one GPU of this node holds, so set {SHARDS_PER_GPU}"
             )
         environ[SHARDS_PER_GPU] = f"{per_gpu:g}"
     return min(1.0, int(shards) / float(per_gpu))
@@ -106,23 +106,23 @@ def cap(environ: MutableMapping[str, str] = os.environ) -> float | None:
     version = torch_version()
     if version is None or version < OLDEST_TORCH:
         raise RuntimeError(
-            "safe_shards: the cap needs PyTorch 2.10 or later, whose allocator configuration takes per_process_memory_fraction"
+            "shardguard: the cap needs PyTorch 2.10 or later, whose allocator configuration takes per_process_memory_fraction"
         )
     torch = sys.modules.get("torch")
     if torch is not None and torch.cuda.is_initialized():
         raise RuntimeError(
-            "safe_shards: import it before CUDA is initialised, since PyTorch ignores the cap after that"
+            "shardguard: import it before CUDA is initialised, since PyTorch ignores the cap after that"
         )
     current = next((environ[name] for name in ALLOC_CONF if environ.get(name)), "")
     if "cudaMallocAsync" in current:
         raise RuntimeError(
-            "safe_shards: the cudaMallocAsync backend ignores per_process_memory_fraction"
+            "shardguard: the cudaMallocAsync backend ignores per_process_memory_fraction"
         )
     capped = with_cap(current, share)
     for name in ALLOC_CONF:
         environ[name] = capped
     print(
-        f"safe_shards: CUDA memory capped at {_rounded(share)} of a GPU, the share of {environ['SLURM_SHARDS_ON_NODE']} of its {environ[SHARDS_PER_GPU]} shards",
+        f"shardguard: CUDA memory capped at {_rounded(share)} of a GPU, the share of {environ['SLURM_SHARDS_ON_NODE']} of its {environ[SHARDS_PER_GPU]} shards",
         file=sys.stderr,
     )
     return share

@@ -3,9 +3,9 @@ requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "safe-slurm"
+name = "shardguard"
 version = "0.1.0"
-description = "Keep a Slurm job within the GPU shards and the memory it was allocated"
+description = "Cap the GPU memory of PyTorch at the GPU shards of a Slurm job"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
@@ -18,15 +18,14 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/jonaslreiter/safe-slurm"
+Repository = "https://github.com/jonaslreiter/shardguard"
 
 [dependency-groups]
 dev = ["pytest>=8"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-packages = ["safe_slurm"]
-py-modules = ["safe_memory", "safe_shards"]
+py-modules = ["shardguard"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

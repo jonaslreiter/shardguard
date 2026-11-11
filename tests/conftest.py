@@ -1,5 +1,4 @@
 import os
 
-# Importing the modules acts on a Slurm job, so the tests run as outside one.
-for name in ("SLURM_JOB_ID", "SLURM_SHARDS_ON_NODE"):
-    os.environ.pop(name, None)
+# Importing shardguard acts on a Slurm job that holds GPU shards, so the tests run as outside one.
+os.environ.pop("SLURM_SHARDS_ON_NODE", None)
