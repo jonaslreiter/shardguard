@@ -106,40 +106,39 @@ def test_old_or_missing_pytorch_is_refused(monkeypatch):
             )
 
 
-def test_before_pytorch_is_imported_the_async_allocator_is_refused():
-    with pytest.raises(RuntimeError, match="cudaMallocAsync"):
-        shardguard.cap(
-            {
-                "SLURM_SHARDS_ON_NODE": "4",
-                shardguard.SHARDS_PER_GPU: "24",
-                "PYTORCH_ALLOC_CONF": "backend:cudaMallocAsync",
-            }
-        )
-
-
 class Cuda:
-    """The memory fractions of ``torch.cuda`` for `devices` GPUs, each at `fraction`."""
+    """``torch.cuda`` for `devices` GPUs, each at `fraction`. Like PyTorch, the fraction functions initialise CUDA."""
 
-    def __init__(self, devices, fraction=1.0):
+    def __init__(self, devices=1, fraction=1.0, initialised=True, backend="native"):
         self.fractions = [fraction] * devices
+        self.initialised = initialised
+        self.backend = backend
+
+    def is_initialized(self):
+        return self.initialised
+
+    def get_allocator_backend(self):
+        return self.backend
 
     def device_count(self):
         return len(self.fractions)
 
     def get_per_process_memory_fraction(self, device):
+        self.initialised = True
         return self.fractions[device]
 
     def set_per_process_memory_fraction(self, fraction, device):
+        self.initialised = True
         self.fractions[device] = fraction
 
 
-def import_torch(monkeypatch, devices=1, fraction=1.0):
-    cuda = Cuda(devices, fraction)
+def import_torch(monkeypatch, **cuda):
+    cuda = Cuda(**cuda)
     monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(cuda=cuda))
     return cuda
 
 
-def test_after_pytorch_is_imported_each_gpu_is_capped_directly_too(monkeypatch):
+def test_once_cuda_is_initialised_each_gpu_is_capped_directly_too(monkeypatch):
     cuda = import_torch(monkeypatch, devices=2)
     environ = {"SLURM_SHARDS_ON_NODE": "4", shardguard.SHARDS_PER_GPU: "24"}
     assert shardguard.cap(environ) == 4 / 24
@@ -148,19 +147,26 @@ def test_after_pytorch_is_imported_each_gpu_is_capped_directly_too(monkeypatch):
         assert environ[name] == "per_process_memory_fraction:0.1666"
 
 
-def test_after_pytorch_is_imported_a_lower_cap_wins(monkeypatch):
+def test_once_cuda_is_initialised_a_lower_cap_wins(monkeypatch):
     cuda = import_torch(monkeypatch, fraction=0.1)
     shardguard.cap({"SLURM_SHARDS_ON_NODE": "12", shardguard.SHARDS_PER_GPU: "24"})
     assert cuda.fractions == [0.1]
 
 
-def test_after_pytorch_is_imported_the_async_allocator_is_capped(monkeypatch):
-    cuda = import_torch(monkeypatch)
-    shardguard.cap(
-        {
-            "SLURM_SHARDS_ON_NODE": "6",
-            shardguard.SHARDS_PER_GPU: "24",
-            "PYTORCH_ALLOC_CONF": "backend:cudaMallocAsync",
-        }
-    )
-    assert cuda.fractions == [0.25]
+def test_before_cuda_is_initialised_it_is_left_alone(monkeypatch):
+    cuda = import_torch(monkeypatch, initialised=False)
+    environ = {"SLURM_SHARDS_ON_NODE": "6", shardguard.SHARDS_PER_GPU: "24"}
+    assert shardguard.cap(environ) == 0.25
+    assert not cuda.initialised
+    assert environ["PYTORCH_ALLOC_CONF"] == "per_process_memory_fraction:0.25"
+
+
+@pytest.mark.parametrize("imported", [False, True])
+def test_the_async_allocator_is_refused(monkeypatch, imported):
+    environ = {"SLURM_SHARDS_ON_NODE": "4", shardguard.SHARDS_PER_GPU: "24"}
+    if imported:
+        import_torch(monkeypatch, initialised=False, backend="cudaMallocAsync")
+    else:
+        environ["PYTORCH_ALLOC_CONF"] = "backend:cudaMallocAsync"
+    with pytest.raises(RuntimeError, match="cudaMallocAsync"):
+        shardguard.cap(environ)

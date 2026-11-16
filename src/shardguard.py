@@ -1,6 +1,6 @@
 """Importing shardguard caps the CUDA memory of PyTorch at the share of a GPU that the GPU shards of the Slurm job stand for.
 
-The cap is the shards of the job over the shards one GPU of the node holds. shardguard puts it in the allocator configuration of PyTorch as ``per_process_memory_fraction``, which PyTorch reads when it initialises CUDA and which the processes the program starts inherit. If PyTorch is imported already, it may have initialised CUDA, after which it ignores the configuration, so shardguard also sets the cap with ``torch.cuda.set_per_process_memory_fraction``, which initialises CUDA. Outside a job holding shards, it does nothing.
+The cap is the shards of the job over the shards one GPU of the node holds. shardguard puts it in the allocator configuration of PyTorch as ``per_process_memory_fraction``, which PyTorch reads when it initialises CUDA and which the processes the program starts inherit. If PyTorch has initialised CUDA already, it ignores the configuration, so shardguard also sets the cap with ``torch.cuda.set_per_process_memory_fraction``. The ``cudaMallocAsync`` backend ignores the configuration and can take more than a cap set otherwise, so shardguard refuses it. Outside a job holding shards, it does nothing.
 """
 
 from __future__ import annotations
@@ -108,14 +108,16 @@ def cap(environ: MutableMapping[str, str] = os.environ) -> float | None:
         )
     torch = sys.modules.get("torch")
     current = next((environ[name] for name in ALLOC_CONF if environ.get(name)), "")
-    if torch is None and "cudaMallocAsync" in current:
+    # PyTorch picks its allocator backend when it is imported.
+    backend = current if torch is None else torch.cuda.get_allocator_backend()
+    if "cudaMallocAsync" in backend:
         raise RuntimeError(
-            "shardguard: the cudaMallocAsync backend ignores per_process_memory_fraction in the allocator configuration, so import PyTorch before shardguard"
+            "shardguard: the cudaMallocAsync backend can take more GPU memory than its cap"
         )
     capped = with_cap(current, share)
     for name in ALLOC_CONF:
         environ[name] = capped
-    if torch is not None:
+    if torch is not None and torch.cuda.is_initialized():
         for device in range(torch.cuda.device_count()):
             if torch.cuda.get_per_process_memory_fraction(device) > share:
                 torch.cuda.set_per_process_memory_fraction(_rounded(share), device)
