@@ -1,6 +1,6 @@
 """Importing shardguard caps the CUDA memory of PyTorch at the share of a GPU that the GPU shards of the Slurm job stand for.
 
-The cap is ``per_process_memory_fraction`` in the allocator configuration of PyTorch, set to the shards of the job over the shards one GPU of the node holds. ``expandable_segments`` keeps what PyTorch reserves close to what it allocates. PyTorch reads the configuration when it initialises CUDA, so shardguard must be imported before that, which it checks. Outside a job holding shards, it does nothing.
+The cap is ``per_process_memory_fraction`` in the allocator configuration of PyTorch, set to the shards of the job over the shards one GPU of the node holds. PyTorch reads the configuration when it initialises CUDA, so shardguard must be imported before that, which it checks. Outside a job holding shards, it does nothing.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ def _rounded(share: float) -> float:
 
 
 def with_cap(conf: str, share: float) -> str:
-    """An allocator configuration capped at `share`, with expandable segments unless it sets them itself. A lower cap it already has is kept."""
+    """An allocator configuration capped at `share`. A lower cap it already has is kept."""
     settings = [item for item in conf.split(",") if item]
     capped = f"per_process_memory_fraction:{_rounded(share)}"
     match = FRACTION.search(conf)
@@ -83,8 +83,6 @@ def with_cap(conf: str, share: float) -> str:
         settings.append(capped)
     elif float(match.group(1)) > share:
         settings = [capped if FRACTION.fullmatch(item) else item for item in settings]
-    if not any(item.startswith("expandable_segments:") for item in settings):
-        settings.append("expandable_segments:True")
     return ",".join(settings)
 
 
