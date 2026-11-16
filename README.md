@@ -12,7 +12,7 @@ and import it in the entry point of your program, before it puts anything on the
 import shardguard
 ```
 
-Past the cap, PyTorch raises an out-of-memory error. Outside a Slurm job that holds shards, nothing happens.
+Past the cap, PyTorch raises an out-of-memory error. Outside a Slurm job that holds shards, nothing happens. shardguard logs the cap to the `shardguard` logger at level INFO, which shows only if logging is set up before shardguard is imported.
 
 ## How it works
 

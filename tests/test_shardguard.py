@@ -1,3 +1,4 @@
+import logging
 import sys
 import types
 
@@ -35,6 +36,12 @@ def test_the_cap_is_the_jobs_share_of_a_gpu():
     assert shardguard.cap(environ) == 0.25
     for name in shardguard.ALLOC_CONF:
         assert environ[name] == "per_process_memory_fraction:0.25"
+
+
+def test_the_cap_is_logged(caplog):
+    caplog.set_level(logging.INFO, logger="shardguard")
+    shardguard.cap({"SLURM_SHARDS_ON_NODE": "6", shardguard.SHARDS_PER_GPU: "24"})
+    assert caplog.messages == ["CUDA memory capped at 0.25 of the GPU (6 of 24 shards)"]
 
 
 def test_the_shards_per_gpu_come_from_the_node_once(monkeypatch):
