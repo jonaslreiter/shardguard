@@ -34,9 +34,7 @@ def test_the_cap_is_the_jobs_share_of_a_gpu():
     environ = {"SLURM_SHARDS_ON_NODE": "6", shardguard.SHARDS_PER_GPU: "24"}
     assert shardguard.cap(environ) == 0.25
     for name in shardguard.ALLOC_CONF:
-        assert (
-            environ[name] == "per_process_memory_fraction:0.25,expandable_segments:True"
-        )
+        assert environ[name] == "per_process_memory_fraction:0.25"
 
 
 def test_the_shards_per_gpu_come_from_the_node_once(monkeypatch):
@@ -81,7 +79,6 @@ def test_existing_settings_are_kept_and_a_lower_cap_wins():
         "per_process_memory_fraction": "0.5",
     }
     assert settings(shardguard.with_cap("per_process_memory_fraction:0.1", 0.5)) == {
-        "expandable_segments": "True",
         "per_process_memory_fraction": "0.1",
     }
     assert (
@@ -96,7 +93,7 @@ def test_the_cap_is_rounded_down_and_other_settings_are_left_alone():
     conf = shardguard.with_cap("roundup_power2_divisions:[256:1,512:2]", 1 / 6)
     assert (
         conf
-        == "roundup_power2_divisions:[256:1,512:2],per_process_memory_fraction:0.1666,expandable_segments:True"
+        == "roundup_power2_divisions:[256:1,512:2],per_process_memory_fraction:0.1666"
     )
 
 
