@@ -5,6 +5,7 @@ The cap is the shards of the job over the shards one GPU of the node holds. shar
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
@@ -12,6 +13,8 @@ import subprocess
 import sys
 from importlib import metadata
 from typing import MutableMapping
+
+logger = logging.getLogger(__name__)
 
 SHARDS_PER_GPU = "SHARDGUARD_SHARDS_PER_GPU"
 # PyTorch reads the first of these that is set, and releases before 2.9 only the second.
@@ -121,9 +124,11 @@ def cap(environ: MutableMapping[str, str] = os.environ) -> float | None:
         for device in range(torch.cuda.device_count()):
             if torch.cuda.get_per_process_memory_fraction(device) > share:
                 torch.cuda.set_per_process_memory_fraction(_rounded(share), device)
-    print(
-        f"shardguard: CUDA memory capped at {_rounded(share)} of a GPU, the share of {environ['SLURM_SHARDS_ON_NODE']} of its {environ[SHARDS_PER_GPU]} shards",
-        file=sys.stderr,
+    logger.info(
+        "CUDA memory capped at %s of the GPU (%s of %s shards)",
+        _rounded(share),
+        environ["SLURM_SHARDS_ON_NODE"],
+        environ[SHARDS_PER_GPU],
     )
     return share
 
