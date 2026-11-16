@@ -139,12 +139,13 @@ def import_torch(monkeypatch, devices=1, fraction=1.0):
     return cuda
 
 
-def test_after_pytorch_is_imported_each_gpu_is_capped_directly(monkeypatch):
+def test_after_pytorch_is_imported_each_gpu_is_capped_directly_too(monkeypatch):
     cuda = import_torch(monkeypatch, devices=2)
     environ = {"SLURM_SHARDS_ON_NODE": "4", shardguard.SHARDS_PER_GPU: "24"}
     assert shardguard.cap(environ) == 4 / 24
     assert cuda.fractions == [0.1666, 0.1666]
-    assert not any(name in environ for name in shardguard.ALLOC_CONF)
+    for name in shardguard.ALLOC_CONF:
+        assert environ[name] == "per_process_memory_fraction:0.1666"
 
 
 def test_after_pytorch_is_imported_a_lower_cap_wins(monkeypatch):
