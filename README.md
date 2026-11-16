@@ -6,7 +6,7 @@ Slurm can split a GPU into shards, but it does not limit the GPU memory of a job
 pip install shardguard
 ```
 
-and import it in the entry point of your program, before anything initialises CUDA:
+and import it in the entry point of your program, before it puts anything on the GPU:
 
 ```python
 import shardguard
@@ -16,6 +16,6 @@ Past the cap, PyTorch raises an out-of-memory error. Outside a Slurm job that ho
 
 ## How it works
 
-The share is the number of shards of the job over the number of shards one GPU of the node holds, which shardguard reads from `scontrol show node`. Setting `SHARDGUARD_SHARDS_PER_GPU` gives that number instead. The cap is `per_process_memory_fraction` in `PYTORCH_ALLOC_CONF` and `PYTORCH_CUDA_ALLOC_CONF`. It counts the memory PyTorch reserves, not only what it allocates, so fragmentation eats into it. Setting `expandable_segments:True` in the same variables reduces that.
+The share is the number of shards of the job over the number of shards one GPU of the node holds, which shardguard reads from `scontrol show node`. Setting `SHARDGUARD_SHARDS_PER_GPU` gives that number instead. Before PyTorch is imported, the cap goes in `PYTORCH_ALLOC_CONF` and `PYTORCH_CUDA_ALLOC_CONF` as `per_process_memory_fraction`, which PyTorch reads when it initialises CUDA. After, PyTorch may have read them already, so shardguard sets the cap with `torch.cuda.set_per_process_memory_fraction`, which initialises CUDA. The cap counts the memory PyTorch reserves, not only what it allocates, so fragmentation eats into it. Setting `expandable_segments:True` in the same variables reduces that.
 
-The cap needs PyTorch 2.10 or later with its native allocator. PyTorch reads the setting when it initialises CUDA, so shardguard raises an error when it is imported after that. The cap applies to each process separately and does not cover the CUDA context, which takes a few hundred MB. shardguard also raises an error when the shards of the job are spread over several GPUs.
+The cap needs PyTorch 2.10 or later. Before PyTorch is imported, it also needs the native allocator, since the `cudaMallocAsync` backend ignores `per_process_memory_fraction` in the allocator configuration. The cap applies to each process separately and does not cover the CUDA context, which takes a few hundred MB. shardguard also raises an error when the shards of the job are spread over several GPUs.

@@ -1,6 +1,6 @@
 """Importing shardguard caps the CUDA memory of PyTorch at the share of a GPU that the GPU shards of the Slurm job stand for.
 
-The cap is ``per_process_memory_fraction`` in the allocator configuration of PyTorch, set to the shards of the job over the shards one GPU of the node holds. PyTorch reads the configuration when it initialises CUDA, so shardguard must be imported before that, which it checks. Outside a job holding shards, it does nothing.
+The cap is the shards of the job over the shards one GPU of the node holds. Before PyTorch is imported, shardguard puts it in the allocator configuration of PyTorch as ``per_process_memory_fraction``, which PyTorch reads when it initialises CUDA. After, PyTorch may have read the configuration already, so shardguard sets the cap with ``torch.cuda.set_per_process_memory_fraction``, which initialises CUDA. Outside a job holding shards, it does nothing.
 """
 
 from __future__ import annotations
@@ -107,18 +107,19 @@ def cap(environ: MutableMapping[str, str] = os.environ) -> float | None:
             "shardguard: the cap needs PyTorch 2.10 or later, whose allocator configuration takes per_process_memory_fraction"
         )
     torch = sys.modules.get("torch")
-    if torch is not None and torch.cuda.is_initialized():
-        raise RuntimeError(
-            "shardguard: import it before CUDA is initialised, since PyTorch ignores the cap after that"
-        )
-    current = next((environ[name] for name in ALLOC_CONF if environ.get(name)), "")
-    if "cudaMallocAsync" in current:
-        raise RuntimeError(
-            "shardguard: the cudaMallocAsync backend ignores per_process_memory_fraction"
-        )
-    capped = with_cap(current, share)
-    for name in ALLOC_CONF:
-        environ[name] = capped
+    if torch is None:
+        current = next((environ[name] for name in ALLOC_CONF if environ.get(name)), "")
+        if "cudaMallocAsync" in current:
+            raise RuntimeError(
+                "shardguard: the cudaMallocAsync backend ignores per_process_memory_fraction in the allocator configuration, so import PyTorch before shardguard"
+            )
+        capped = with_cap(current, share)
+        for name in ALLOC_CONF:
+            environ[name] = capped
+    else:
+        for device in range(torch.cuda.device_count()):
+            if torch.cuda.get_per_process_memory_fraction(device) > share:
+                torch.cuda.set_per_process_memory_fraction(_rounded(share), device)
     print(
         f"shardguard: CUDA memory capped at {_rounded(share)} of a GPU, the share of {environ['SLURM_SHARDS_ON_NODE']} of its {environ[SHARDS_PER_GPU]} shards",
         file=sys.stderr,
